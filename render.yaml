@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: laudos-web
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    healthCheckPath: /
+    envVars:
+      - key: DROPBOX_APP_KEY
+        sync: false
+      - key: DROPBOX_APP_SECRET
+        sync: false
+      - key: DROPBOX_REFRESH_TOKEN
+        sync: false
+      - key: DROPBOX_LAUDOS_FOLDER
+        value: /Laudos   # ajuste ao caminho da pasta no Dropbox

@@ -20,23 +20,48 @@ HTML = """
     h1 { margin:0 0 12px; font-size:22px; }
     p.muted{color:#666; margin-top:0}
     label{display:block; font-size:14px; margin:10px 0 6px;}
-    input{width:100%; padding:12px; border:1px solid #d7d9e0; border-radius:10px; font-size:16px}
+    input{width:100%; box-sizing:border-box; padding:12px; border:1px solid #d7d9e0; border-radius:10px; font-size:16px; margin:0;}
     button{width:100%; padding:12px; margin-top:16px; border:0; border-radius:10px; font-size:16px; cursor:pointer; background:#2563eb; color:#fff}
     .error{color:#c02626; background:#fdecec; padding:10px 12px; border-radius:10px; margin-top:14px; font-size:14px}
     .success{background:#ecfdf5; color:#065f46; padding:10px 12px; border-radius:10px; margin-top:14px; font-size:14px}
     a.btn{display:inline-block; margin-top:10px; text-decoration:none; background:#10b981; color:#fff; padding:10px 14px; border-radius:10px}
     small{display:block; margin-top:10px; color:#777}
+    /* Aguarde overlay */
+    #aguarde-overlay {
+      display:none; position:fixed; z-index:9999; top:0; left:0; width:100vw; height:100vh;
+      background:rgba(255,255,255,0.85); align-items:center; justify-content:center;
+    }
+    .spinner {
+      border: 6px solid #e5e7eb;
+      border-top: 6px solid #2563eb;
+      border-radius: 50%;
+      width: 48px;
+      height: 48px;
+      animation: spin 1s linear infinite;
+      margin:auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg);}
+      100% { transform: rotate(360deg);}
+    }
+    #aguarde-msg { text-align:center; color:#2563eb; font-size:18px; margin-top:18px;}
   </style>
 </head>
 <body>
+  <div id="aguarde-overlay">
+    <div>
+      <div class="spinner"></div>
+      <div id="aguarde-msg">Aguarde, preparando download...</div>
+    </div>
+  </div>
   <div class="card">
     <h1>Consulta de Laudo</h1>
     <p class="muted">Digite o <b>código do exame</b> e sua <b>data de nascimento</b>.</p>
-    <form method="post" novalidate>
+    <form method="post" novalidate id="laudo-form" autocomplete="off">
       <label for="codigo">Código do exame</label>
-      <input id="codigo" name="codigo" required placeholder="Ex.: 123456">
+      <input id="codigo" name="codigo" required placeholder="Ex.: 123456" autocomplete="off">
       <label for="data_nasc">Data de nascimento</label>
-      <input id="data_nasc" name="data_nasc" required placeholder="DD/MM/AAAA" maxlength="10">
+      <input id="data_nasc" name="data_nasc" required placeholder="DD/MM/AAAA" maxlength="10" autocomplete="off">
       <button type="submit">Buscar laudo</button>
     </form>
 
@@ -52,6 +77,7 @@ HTML = """
     {% endif %}
   </div>
   <script>
+    // Máscara data nascimento
     const dataInput = document.getElementById('data_nasc');
     dataInput.addEventListener('input', function(e) {
       let v = dataInput.value.replace(/\\D/g, '').slice(0,8);
@@ -61,6 +87,11 @@ HTML = """
         dataInput.value = v.replace(/(\\d{2})(\\d{1,2})/, '$1/$2');
       else
         dataInput.value = v;
+    });
+
+    // Aguarde animado
+    document.getElementById('laudo-form').addEventListener('submit', function() {
+      document.getElementById('aguarde-overlay').style.display = 'flex';
     });
   </script>
 </body>

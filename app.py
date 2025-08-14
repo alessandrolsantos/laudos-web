@@ -36,7 +36,7 @@ HTML = """
       <label for="codigo">Código do exame</label>
       <input id="codigo" name="codigo" required placeholder="Ex.: 123456">
       <label for="data_nasc">Data de nascimento</label>
-      <input id="data_nasc" name="data_nasc" required placeholder="DD/MM/AAAA">
+      <input id="data_nasc" name="data_nasc" required placeholder="DD/MM/AAAA" maxlength="10">
       <button type="submit">Buscar laudo</button>
     </form>
 
@@ -51,6 +51,18 @@ HTML = """
       </div>
     {% endif %}
   </div>
+  <script>
+    const dataInput = document.getElementById('data_nasc');
+    dataInput.addEventListener('input', function(e) {
+      let v = dataInput.value.replace(/\\D/g, '').slice(0,8);
+      if (v.length >= 5)
+        dataInput.value = v.replace(/(\\d{2})(\\d{2})(\\d{1,4})/, '$1/$2/$3');
+      else if (v.length >= 3)
+        dataInput.value = v.replace(/(\\d{2})(\\d{1,2})/, '$1/$2');
+      else
+        dataInput.value = v;
+    });
+  </script>
 </body>
 </html>
 """
@@ -82,8 +94,11 @@ def extrair_data_nascimento_pdf(tmp_path:str)->str|None:
         texto = ""
         for page in reader.pages:
             texto += (page.extract_text() or "")
-    for pat in [r"Data de Nascimento[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})",
-                r"Nascimento[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})"]:
+    for pat in [
+        r"Data de Nascimento[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})",
+        r"Data Nasc[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})",  # <-- adicionado este padrão
+        r"Nascimento[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})"
+    ]:
         m = re.search(pat, texto, flags=re.IGNORECASE)
         if m:
             return normalizar_data(m.group(1))

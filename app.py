@@ -163,17 +163,29 @@ def get_drive_service():
     SCOPES = ['https://www.googleapis.com/auth/drive']
     creds = None
     cred_path = get_credentials_path()
+
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+
     if not creds or not creds.valid:
         flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
+
         if os.environ.get("FLASK_ENV") == "production" or os.environ.get("RENDER"):
+            # No servidor (Render, produção) → não abre navegador
             creds = flow.run_local_server(open_browser=False)
         else:
-            creds = flow.run_local_server(port=0)            
+            # No ambiente local (desenvolvimento) → pode usar terminal
+            try:
+                creds = flow.run_local_server(port=0)
+            except:
+                # fallback para console se não conseguir abrir servidor local
+                creds = flow.run_installed_app()
+
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
+
     return build('drive', 'v3', credentials=creds)
+
 
 def normalizar_data(data:str)->str:
     data = (data or "").strip().replace("-", "/")

@@ -29,22 +29,24 @@ HTML = """
     .card { max-width:420px; margin:40px auto; background:#fff; padding:24px; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.06); }
     .logo { text-align:center; margin-bottom:12px; }
     .logo img { max-width:160px; height:auto; }
-    h1 { margin:8px 0 10px; font-size:22px; }
-    p.muted{color:#666; margin-top:0; font-size:15px;}
-    label{display:block; font-size:14px; margin:10px 0 3px;}
+    h1 { margin:8px 0 10px; font-size:22px; font-weight:600; color:#1B399E; }
+    p.muted{color:#555; margin-top:0; font-size:15px; line-height:1.4;}
+    label{display:block; font-size:15px; margin:14px 0 6px; font-weight:500; color:#333;}
     input{width:100%; box-sizing:border-box; padding:14px; border:1px solid #d7d9e0; border-radius:10px; font-size:17px; margin:0 0 6px 0; transition:border .15s;}
     input:focus { border:2px solid #1B399E; outline:none; }
     button{
-      width:100%; padding:16px; margin-top:10px; margin-bottom:8px; border:0; border-radius:10px; font-size:18px; cursor:pointer;
-      background: #1B399E; color:#fff; font-weight:500; box-shadow:0 2px 8px rgba(27,57,158,0.12);
+      width:100%; padding:16px; margin-top:16px; margin-bottom:8px; border:0; border-radius:10px; font-size:18px; cursor:pointer;
+      background: #1B399E; color:#fff; font-weight:600; box-shadow:0 2px 8px rgba(27,57,158,0.12);
       transition: background 0.2s;
     }
     button:active { background:#14295d; }
     .error{display:flex; align-items:center; color:#c02626; background:#fdecec; padding:10px 12px; border-radius:10px; font-size:15px; margin-bottom:12px; margin-top:7px;}
     .error::before { content:"✗"; display:inline-block; margin-right:8px; font-size:20px; }
-    .success{background:#ecfdf5; color:#065f46; padding:10px 12px; border-radius:10px; margin-top:10px; font-size:15px}
-    a.btn{display:inline-block; margin-top:10px; text-decoration:none; background:#10b981; color:#fff; padding:10px 14px; border-radius:10px}
-    small{display:block; margin-top:10px; color:#777}
+    .success{background:#ecfdf5; color:#065f46; padding:14px 14px; border-radius:12px; margin-top:16px; font-size:15px; border:1px solid #34d399;}
+    .success strong { display:block; font-size:16px; margin-bottom:6px; }
+    a.btn{display:inline-block; margin-top:12px; text-decoration:none; background:#10b981; color:#fff; padding:12px 16px; border-radius:10px; font-weight:500; font-size:16px;}
+    a.btn:hover{background:#059669;}
+    small{display:block; margin-top:12px; color:#777; font-size:13px;}
     #aguarde-overlay {
       display:none; position:fixed; z-index:9999; top:0; left:0; width:100vw; height:100vh;
       background:rgba(255,255,255,0.85); align-items:center; justify-content:center;
@@ -84,22 +86,22 @@ HTML = """
       <img src="{{ url_for('static', filename='logo_epicentro.png') }}" alt="Epicentro - Centro de Diagnóstico e Tratamento de Epilepsia">
     </div>
     <h1>Consulta de Laudo</h1>
-    <p class="muted">Digite o <b>código do exame</b> e sua <b>data de nascimento</b>.</p>
+    <p class="muted">Informe o <b>código do exame</b> e a sua <b>data de nascimento</b> para visualizar o resultado.</p>
     <form method="post" novalidate id="laudo-form" autocomplete="off">
       <label for="codigo">Código do exame</label>
-      <input id="codigo" name="codigo" type="text" required autofocus placeholder="Ex.: 123456" autocomplete="off" aria-label="Código do exame">
+      <input id="codigo" name="codigo" type="number" required autofocus placeholder="Ex.: 123456" inputmode="numeric" aria-label="Código do exame">
       <label for="data_nasc">Data de nascimento</label>
-      <input id="data_nasc" name="data_nasc" type="text" required placeholder="DD/MM/AAAA" maxlength="10" autocomplete="off" aria-label="Data de nascimento">
-      <button type="submit">Buscar laudo</button>
+      <input id="data_nasc" name="data_nasc" type="text" required placeholder="DD/MM/AAAA" maxlength="10" inputmode="numeric" aria-label="Data de nascimento">
+      <button type="submit">Consultar laudo</button>
       {% if erro %}
         <div class="error">{{ erro }}</div>
       {% endif %}
     </form>
     {% if link %}
       <div class="success">
-        ✅ Seu laudo está pronto.
+        <strong>✅ Seu laudo está disponível!</strong>
         <div><a class="btn" href="{{ link }}">📄 Baixar laudo</a></div>
-        <small>Guarde este link em local seguro.</small>
+        <small>Guarde este link em local seguro. Compartilhe apenas com profissionais autorizados.</small>
       </div>
     {% endif %}
   </div>
@@ -115,13 +117,27 @@ HTML = """
       else
         dataInput.value = v;
     });
-    // Aguarde animado
-    document.getElementById('laudo-form').addEventListener('submit', function() {
+
+    // Validação simples
+    document.getElementById('laudo-form').addEventListener('submit', function(e) {
+      const codigo = document.getElementById('codigo').value.trim();
+      const data = document.getElementById('data_nasc').value.trim();
+      if (!codigo || codigo.length < 4) {
+        e.preventDefault();
+        alert("Por favor, insira um código de exame válido.");
+        return;
+      }
+      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(data)) {
+        e.preventDefault();
+        alert("Por favor, insira a data de nascimento no formato DD/MM/AAAA.");
+        return;
+      }
       document.getElementById('aguarde-overlay').style.display = 'flex';
     });
   </script>
 </body>
 </html>
+
 
 """
 

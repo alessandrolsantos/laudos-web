@@ -142,11 +142,12 @@ HTML = """
 """
 
 def get_credentials_path():
-    # Em produção, recebe caminho ou conteúdo pela variável de ambiente
     cred_env = os.environ.get("GOOGLE_CREDS_JSON")
     if cred_env:
-        return cred_env
-    # Local, usa arquivo padrão na raiz
+        cred_path = "/tmp/credentials.json"
+        with open(cred_path, "w") as f:
+            f.write(cred_env)
+        return cred_path
     return "credentials.json"
 
 

@@ -28,12 +28,7 @@ HTML = """
     body { background:#f6f7fb; padding: 24px; }
     .card { max-width:420px; margin:40px auto; background:#fff; padding:24px; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.06); }
     .logo { text-align:center; margin-bottom:12px; }
-    .logo img { max-width:120px; height:auto; }
-    @media (min-width: 768px) {
-        .logo img {
-            max-width:160px;
-        }
-    }
+    .logo img { max-width:160px; height:auto; }
     h1 { margin:8px 0 10px; font-size:22px; }
     p.muted{color:#666; margin-top:0; font-size:15px;}
     label{display:block; font-size:14px; margin:10px 0 3px;}

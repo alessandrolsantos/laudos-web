@@ -168,7 +168,7 @@ def get_drive_service():
     if not creds or not creds.valid:
         flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
         if os.environ.get("FLASK_ENV") == "production" or os.environ.get("RENDER"):
-            creds = flow.run_console()
+            creds = flow.run_local_server(open_browser=False)
         else:
             creds = flow.run_local_server(port=0)            
         with open('token.json', 'w') as token:

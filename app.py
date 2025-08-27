@@ -141,6 +141,15 @@ HTML = """
 
 """
 
+def get_credentials_path():
+    # Em produção, recebe caminho ou conteúdo pela variável de ambiente
+    cred_env = os.environ.get("GOOGLE_CREDS_JSON")
+    if cred_env:
+        return cred_env
+    # Local, usa arquivo padrão na raiz
+    return "credentials.json"
+
+
 def get_dbx():
     return dropbox.Dropbox(
         oauth2_refresh_token=os.environ["DROPBOX_REFRESH_TOKEN"],
@@ -152,10 +161,11 @@ def get_drive_service():
     # Requer arquivo credentials.json na raiz do projeto
     SCOPES = ['https://www.googleapis.com/auth/drive']
     creds = None
+    cred_path = get_credentials_path()
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+        flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
         creds = flow.run_local_server(port=0)
         with open('token.json', 'w') as token:
             token.write(creds.to_json())

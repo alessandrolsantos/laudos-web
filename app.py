@@ -4,6 +4,16 @@ import dropbox
 from dropbox.exceptions import ApiError
 import PyPDF2
 
+# Google Drive API imports
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+import io
+
+# STORAGE_PROVIDER = os.environ.get("STORAGE_PROVIDER", "dropbox")
+STORAGE_PROVIDER = os.environ.get("STORAGE_PROVIDER", "google_drive")
+
 app = Flask(__name__)
 
 HTML = """
@@ -20,23 +30,48 @@ HTML = """
     h1 { margin:0 0 12px; font-size:22px; }
     p.muted{color:#666; margin-top:0}
     label{display:block; font-size:14px; margin:10px 0 6px;}
-    input{width:100%; padding:12px; border:1px solid #d7d9e0; border-radius:10px; font-size:16px}
+    input{width:100%; box-sizing:border-box; padding:12px; border:1px solid #d7d9e0; border-radius:10px; font-size:16px; margin:0;}
     button{width:100%; padding:12px; margin-top:16px; border:0; border-radius:10px; font-size:16px; cursor:pointer; background:#2563eb; color:#fff}
     .error{color:#c02626; background:#fdecec; padding:10px 12px; border-radius:10px; margin-top:14px; font-size:14px}
     .success{background:#ecfdf5; color:#065f46; padding:10px 12px; border-radius:10px; margin-top:14px; font-size:14px}
     a.btn{display:inline-block; margin-top:10px; text-decoration:none; background:#10b981; color:#fff; padding:10px 14px; border-radius:10px}
     small{display:block; margin-top:10px; color:#777}
+    /* Aguarde overlay */
+    #aguarde-overlay {
+      display:none; position:fixed; z-index:9999; top:0; left:0; width:100vw; height:100vh;
+      background:rgba(255,255,255,0.85); align-items:center; justify-content:center;
+    }
+    .spinner {
+      border: 6px solid #e5e7eb;
+      border-top: 6px solid #2563eb;
+      border-radius: 50%;
+      width: 48px;
+      height: 48px;
+      animation: spin 1s linear infinite;
+      margin:auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg);}
+      100% { transform: rotate(360deg);}
+    }
+    #aguarde-msg { text-align:center; color:#2563eb; font-size:18px; margin-top:18px;}
   </style>
 </head>
 <body>
+  <div id="aguarde-overlay">
+    <div>
+      <div class="spinner"></div>
+      <div id="aguarde-msg">Aguarde, preparando download...</div>
+    </div>
+  </div>
   <div class="card">
     <h1>Consulta de Laudo</h1>
     <p class="muted">Digite o <b>código do exame</b> e sua <b>data de nascimento</b>.</p>
-    <form method="post" novalidate>
+    <form method="post" novalidate id="laudo-form" autocomplete="off">
       <label for="codigo">Código do exame</label>
-      <input id="codigo" name="codigo" required placeholder="Ex.: 123456">
+      <input id="codigo" name="codigo" required placeholder="Ex.: 123456" autocomplete="off">
       <label for="data_nasc">Data de nascimento</label>
-      <input id="data_nasc" name="data_nasc" required placeholder="DD/MM/AAAA" maxlength="10">
+      <input id="data_nasc" name="data_nasc" required placeholder="DD/MM/AAAA" maxlength="10" autocomplete="off">
       <button type="submit">Buscar laudo</button>
     </form>
 
@@ -52,6 +87,7 @@ HTML = """
     {% endif %}
   </div>
   <script>
+    // Máscara data nascimento
     const dataInput = document.getElementById('data_nasc');
     dataInput.addEventListener('input', function(e) {
       let v = dataInput.value.replace(/\\D/g, '').slice(0,8);
@@ -61,6 +97,11 @@ HTML = """
         dataInput.value = v.replace(/(\\d{2})(\\d{1,2})/, '$1/$2');
       else
         dataInput.value = v;
+    });
+
+    // Aguarde animado
+    document.getElementById('laudo-form').addEventListener('submit', function() {
+      document.getElementById('aguarde-overlay').style.display = 'flex';
     });
   </script>
 </body>
@@ -73,6 +114,19 @@ def get_dbx():
         app_key=os.environ["DROPBOX_APP_KEY"],
         app_secret=os.environ["DROPBOX_APP_SECRET"]
     )
+
+def get_drive_service():
+    # Requer arquivo credentials.json na raiz do projeto
+    SCOPES = ['https://www.googleapis.com/auth/drive']
+    creds = None
+    if os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if not creds or not creds.valid:
+        flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+        creds = flow.run_local_server(port=0)
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+    return build('drive', 'v3', credentials=creds)
 
 def normalizar_data(data:str)->str:
     data = (data or "").strip().replace("-", "/")
@@ -96,7 +150,7 @@ def extrair_data_nascimento_pdf(tmp_path:str)->str|None:
             texto += (page.extract_text() or "")
     for pat in [
         r"Data de Nascimento[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})",
-        r"Data Nasc[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})",  # <-- adicionado este padrão
+        r"Data Nasc[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})",
         r"Nascimento[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})"
     ]:
         m = re.search(pat, texto, flags=re.IGNORECASE)
@@ -104,6 +158,7 @@ def extrair_data_nascimento_pdf(tmp_path:str)->str|None:
             return normalizar_data(m.group(1))
     return None
 
+# Dropbox
 def find_pdf_by_code(dbx, codigo:str, root_folder:str=""):
     codigo = str(codigo).strip()
     res = dbx.files_list_folder(root_folder or "", recursive=True)
@@ -132,40 +187,84 @@ def ensure_shared_download_link(dbx, path:str)->str|None:
             raise
     if not url:
         return None
-    # forçar download
     if "dl=0" in url:
         url = url.replace("dl=0", "dl=1")
     elif "?dl=1" not in url:
         url += "?dl=1"
     return url
 
+# Google Drive
+def find_pdf_drive(service, codigo:str, folder_id:str):
+    query = (
+        f"name contains '{codigo}' and mimeType='application/pdf' "
+        f"and '{folder_id}' in parents"
+    )
+    results = service.files().list(q=query, pageSize=10, fields="files(id, name)").execute()
+    items = results.get('files', [])
+    return items[0] if items else None
+
+def download_pdf_drive(service, file_id, tmp_path):
+    request = service.files().get_media(fileId=file_id)
+    fh = io.FileIO(tmp_path, 'wb')
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+    fh.close()
+
+def ensure_shared_download_link_drive(file_id):
+    return f"https://drive.google.com/uc?id={file_id}&export=download"
+
 def _processar_laudo(codigo, data_nasc):
     try:
         if not codigo or not data_nasc:
             return {"ok": False, "msg": "Informe código e data de nascimento."}
-        dbx = get_dbx()
-        root = os.environ.get("DROPBOX_LAUDOS_FOLDER", "")
-        entry = find_pdf_by_code(dbx, codigo, root_folder=root)
-        if not entry:
-            return {"ok": False, "msg": "Laudo não encontrado."}
 
-        # baixa temporariamente para validar a data no conteúdo
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            tmp_path = tmp.name
-        dbx.files_download_to_file(tmp_path, entry.path_lower)
-        data_pdf = extrair_data_nascimento_pdf(tmp_path)
-        try: os.remove(tmp_path)
-        except: pass
+        if STORAGE_PROVIDER == "dropbox":
+            dbx = get_dbx()
+            root = os.environ.get("DROPBOX_LAUDOS_FOLDER", "")
+            entry = find_pdf_by_code(dbx, codigo, root_folder=root)
+            if not entry:
+                return {"ok": False, "msg": "Laudo não encontrado."}
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp_path = tmp.name
+            dbx.files_download_to_file(tmp_path, entry.path_lower)
+            data_pdf = extrair_data_nascimento_pdf(tmp_path)
+            try: os.remove(tmp_path)
+            except: pass
+            if not data_pdf:
+                return {"ok": False, "msg": "Não foi possível validar a data de nascimento no PDF."}
+            if normalizar_data(data_nasc) != data_pdf:
+                return {"ok": False, "msg": "Data de nascimento inválida."}
+            url = ensure_shared_download_link(dbx, entry.path_lower)
+            if not url:
+                return {"ok": False, "msg": "Não foi possível gerar o link do laudo."}
+            return {"ok": True, "link": url}
+        
+        elif STORAGE_PROVIDER == "google_drive":
+            service = get_drive_service()
+            folder_id = os.environ.get("GOOGLE_FOLDER_ID", "")
+            entry = find_pdf_drive(service, codigo, folder_id)
+            if not entry:
+                return {"ok": False, "msg": "Laudo não encontrado."}
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp_path = tmp.name
+            download_pdf_drive(service, entry['id'], tmp_path)
+            data_pdf = extrair_data_nascimento_pdf(tmp_path)
+            try: os.remove(tmp_path)
+            except: pass
+            if not data_pdf:
+                return {"ok": False, "msg": "Não foi possível validar a data de nascimento no PDF."}
+            if normalizar_data(data_nasc) != data_pdf:
+                return {"ok": False, "msg": "Data de nascimento inválida."}
+            url = ensure_shared_download_link_drive(entry['id'])
+            if not url:
+                return {"ok": False, "msg": "Não foi possível gerar o link do laudo."}
+            return {"ok": True, "link": url}
 
-        if not data_pdf:
-            return {"ok": False, "msg": "Não foi possível validar a data de nascimento no PDF."}
-        if normalizar_data(data_nasc) != data_pdf:
-            return {"ok": False, "msg": "Data de nascimento inválida."}
+        else:
+            return {"ok": False, "msg": "Storage provider não configurado corretamente."}
 
-        url = ensure_shared_download_link(dbx, entry.path_lower)
-        if not url:
-            return {"ok": False, "msg": "Não foi possível gerar o link do laudo."}
-        return {"ok": True, "link": url}
     except Exception as e:
         return {"ok": False, "msg": f"Erro técnico: {str(e)}"}
 
@@ -184,9 +283,11 @@ def home():
 def laudo():
     data = request.get_json(force=True, silent=True) or {}
     resp = _processar_laudo(data.get("codigo_exame"), data.get("data_nascimento"))
-    status = 200 if resp["ok"] else (404 if "não encontrado" in resp["msg"].lower() else 401 if "inválida" in resp["msg"].lower() else 500)
+    status = 200 if resp["ok"] else (
+        404 if "não encontrado" in resp["msg"].lower() else
+        401 if "inválida" in resp["msg"].lower() else 500
+    )
     return jsonify(resp), status
 
 if __name__ == "__main__":
-    # Render injeta PORT; localmente cai em 10000
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

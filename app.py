@@ -122,7 +122,7 @@ HTML = """
     document.getElementById('laudo-form').addEventListener('submit', function(e) {
       const codigo = document.getElementById('codigo').value.trim();
       const data = document.getElementById('data_nasc').value.trim();
-      if (!codigo || codigo.length < 4) {
+      if (!codigo || codigo.length < 3) {
         e.preventDefault();
         alert("Por favor, insira um código de exame válido.");
         return;

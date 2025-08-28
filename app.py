@@ -140,6 +140,17 @@ HTML = """
 
 
 """
+def get_token_path():
+    token_env = os.environ.get("GOOGLE_TOKEN_JSON")
+    if token_env:
+        # Caso esteja no Render (variável de ambiente configurada)
+        path = "/tmp/token.json"
+        with open(path, "w") as f:
+            f.write(token_env)
+        return path
+    # Caso contrário, usa o arquivo local (para desenvolvimento)
+    return "token.json"
+
 
 def get_credentials_path():
     cred_env = os.environ.get("GOOGLE_CREDS_JSON")
@@ -158,33 +169,41 @@ def get_dbx():
         app_secret=os.environ["DROPBOX_APP_SECRET"]
     )
 
+def get_token_path():
+    token_env = os.environ.get("GOOGLE_TOKEN_JSON")
+    if token_env:
+        # Caso esteja no Render (variável de ambiente configurada)
+        path = "/tmp/token.json"
+        with open(path, "w") as f:
+            f.write(token_env)
+        return path
+    # Caso contrário, usa o arquivo local (para desenvolvimento)
+    return "token.json"
+
+
 def get_drive_service():
-    # Requer arquivo credentials.json na raiz do projeto
     SCOPES = ['https://www.googleapis.com/auth/drive']
     creds = None
     cred_path = get_credentials_path()
+    token_path = get_token_path()
 
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
 
     if not creds or not creds.valid:
         flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
 
         if os.environ.get("FLASK_ENV") == "production" or os.environ.get("RENDER"):
-            # No servidor (Render, produção) → não abre navegador
-            creds = flow.run_local_server(open_browser=False)
+            creds = flow.run_installed_app()
         else:
-            # No ambiente local (desenvolvimento) → pode usar terminal
-            try:
-                creds = flow.run_local_server(port=0)
-            except:
-                # fallback para console se não conseguir abrir servidor local
-                creds = flow.run_installed_app()
+            creds = flow.run_local_server(port=0)
 
-        with open('token.json', 'w') as token:
+        # Salva no token_path (local ou /tmp no Render)
+        with open(token_path, 'w') as token:
             token.write(creds.to_json())
 
     return build('drive', 'v3', credentials=creds)
+
 
 
 def normalizar_data(data:str)->str:

@@ -227,6 +227,7 @@ def normalizar_data(data:str)->str:
     return data
 
 def extrair_data_nascimento_pdf(tmp_path:str)->str|None:
+    texto = ""
     with open(tmp_path, "rb") as f:
         reader = PyPDF2.PdfReader(f)
         texto = re.sub(r"\s+", " ", texto)  # substitui múltiplos espaços por um só

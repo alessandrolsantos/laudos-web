@@ -1,3 +1,4 @@
+from flask import send_file
 import os, re, tempfile
 from flask import Flask, request, jsonify, render_template_string
 import dropbox
@@ -318,53 +319,50 @@ def _processar_laudo(codigo, data_nasc):
         if not codigo or not data_nasc:
             return {"ok": False, "msg": "Informe código e data de nascimento."}
 
-        if STORAGE_PROVIDER == "dropbox":
-            dbx = get_dbx()
-            root = os.environ.get("DROPBOX_LAUDOS_FOLDER", "")
-            entry = find_pdf_by_code(dbx, codigo, root_folder=root)
-            if not entry:
-                return {"ok": False, "msg": "Laudo não encontrado."}
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-                tmp_path = tmp.name
-            dbx.files_download_to_file(tmp_path, entry.path_lower)
-            data_pdf = extrair_data_nascimento_pdf(tmp_path)
-            try: os.remove(tmp_path)
-            except: pass
-            if not data_pdf:
-                return {"ok": False, "msg": "Não foi possível validar a data de nascimento no PDF."}
-            if normalizar_data(data_nasc) != data_pdf:
-                return {"ok": False, "msg": "Data de nascimento inválida."}
-            url = ensure_shared_download_link(dbx, entry.path_lower)
-            if not url:
-                return {"ok": False, "msg": "Não foi possível gerar o link do laudo."}
-            return {"ok": True, "link": url}
-        
-        elif STORAGE_PROVIDER == "google_drive":
+        if STORAGE_PROVIDER == "google_drive":
             service = get_drive_service()
             folder_id = os.environ.get("GOOGLE_FOLDER_ID", "")
             entry = find_pdf_drive(service, codigo, folder_id)
             if not entry:
                 return {"ok": False, "msg": "Laudo não encontrado."}
+
+            # Baixa PDF temporário
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                 tmp_path = tmp.name
             download_pdf_drive(service, entry['id'], tmp_path)
+
+            # Valida data
             data_pdf = extrair_data_nascimento_pdf(tmp_path)
-            try: os.remove(tmp_path)
-            except: pass
+            try:
+                os.remove(tmp_path)
+            except:
+                pass
+
             if not data_pdf:
                 return {"ok": False, "msg": "Não foi possível validar a data de nascimento no PDF."}
             if normalizar_data(data_nasc) != data_pdf:
                 return {"ok": False, "msg": "Data de nascimento inválida."}
-            url = ensure_shared_download_link_drive(service, entry['id'])
-            if not url:
-                return {"ok": False, "msg": "Não foi possível gerar o link do laudo."}
-            return {"ok": True, "link": url}
+
+            # Retorna apenas o file_id, para depois servir via nova rota
+            return {"ok": True, "file_id": entry['id'], "filename": entry['name']}
 
         else:
             return {"ok": False, "msg": "Storage provider não configurado corretamente."}
 
     except Exception as e:
         return {"ok": False, "msg": f"Erro técnico: {str(e)}"}
+
+@app.route("/download/<file_id>")
+def download(file_id):
+    try:
+        service = get_drive_service()
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp_path = tmp.name
+        download_pdf_drive(service, file_id, tmp_path)
+        return send_file(tmp_path, as_attachment=True, download_name=f"{file_id}.pdf")
+    except Exception as e:
+        return f"Erro ao baixar laudo: {e}", 500
+
 
 @app.route("/", methods=["GET", "POST"])
 def home():
@@ -373,7 +371,11 @@ def home():
         codigo = request.form.get("codigo")
         data_nasc = request.form.get("data_nasc")
         resp = _processar_laudo(codigo, data_nasc)
-        link = resp.get("link") if resp.get("ok") else None
+        if resp.get("ok"):
+            link = f"/download/{resp.get('file_id')}"
+        else:
+            link = None
+
         erro = None if resp.get("ok") else resp.get("msg")
     return render_template_string(HTML, link=link, erro=erro)
 

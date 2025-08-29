@@ -295,8 +295,23 @@ def download_pdf_drive(service, file_id, tmp_path):
         status, done = downloader.next_chunk()
     fh.close()
 
-def ensure_shared_download_link_drive(file_id):
+def ensure_shared_download_link_drive(service, file_id):
+    # Garante que o arquivo possa ser acessado por qualquer pessoa com o link
+    permission = {
+        'type': 'anyone',
+        'role': 'reader'
+    }
+    try:
+        service.permissions().create(
+            fileId=file_id,
+            body=permission,
+            fields='id'
+        ).execute()
+    except Exception as e:
+        print("Permissão já existe ou erro:", e)
+
     return f"https://drive.google.com/uc?id={file_id}&export=download"
+
 
 def _processar_laudo(codigo, data_nasc):
     try:

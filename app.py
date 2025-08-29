@@ -102,10 +102,7 @@ HTML = """
     {% if link %}
       <div class="success">
         <strong>✅ Seu laudo está disponível!</strong>
-        <div>
-            <a href="{{ link }}" target="_blank" class="btn">👁️ Visualizar laudo</a>
-            <a class="btn" href="{{ link }}">📄 Baixar laudo</a>
-        </div>
+        <div><a class="btn" href="{{ link }}">📄 Baixar laudo</a></div>
         <small>Guarde este link em local seguro. Compartilhe apenas com profissionais autorizados.</small>
       </div>
     {% endif %}

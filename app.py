@@ -229,12 +229,11 @@ def normalizar_data(data:str)->str:
 def extrair_data_nascimento_pdf(tmp_path:str)->str|None:
     with open(tmp_path, "rb") as f:
         reader = PyPDF2.PdfReader(f)
-        texto = ""
+        texto = re.sub(r"\s+", " ", texto)  # substitui múltiplos espaços por um só
         for page in reader.pages:
             texto += (page.extract_text() or "")
     for pat in [
-        r"Data de Nascimento[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})",
-        r"Data Nasc[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})",
+        r"Data\s*Nasc(?:imento)?[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})",
         r"Nascimento[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})"
     ]:
         m = re.search(pat, texto, flags=re.IGNORECASE)

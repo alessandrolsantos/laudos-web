@@ -9,6 +9,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+from google.auth.transport.requests import Request
 import io
 
 # STORAGE_PROVIDER = os.environ.get("STORAGE_PROVIDER", "dropbox")
@@ -188,20 +189,23 @@ def get_drive_service():
     cred_path = get_credentials_path()
     token_path = get_token_path()
 
+    # Lê token já existente
     if os.path.exists(token_path):
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
 
+    # Se não existir ou estiver inválido, tenta renovar
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+
+    # Se ainda não tem credenciais válidas → só no ambiente de DEV
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
-
         if os.environ.get("FLASK_ENV") == "production" or os.environ.get("RENDER"):
-            creds = flow.run_installed_app()
+            raise Exception("Token inválido ou ausente em produção. Gere token.json localmente e configure em GOOGLE_TOKEN_JSON.")
         else:
+            flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
             creds = flow.run_local_server(port=0)
-
-        # Salva no token_path (local ou /tmp no Render)
-        with open(token_path, 'w') as token:
-            token.write(creds.to_json())
+            with open(token_path, 'w') as token:
+                token.write(creds.to_json())
 
     return build('drive', 'v3', credentials=creds)
 

@@ -150,6 +150,7 @@ def get_token_path():
         return path
     # Caso contrário, usa o arquivo local (para desenvolvimento)
     return "token.json"
+    
 
 
 def get_credentials_path():

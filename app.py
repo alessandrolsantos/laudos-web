@@ -102,7 +102,10 @@ HTML = """
     {% if link %}
       <div class="success">
         <strong>✅ Seu laudo está disponível!</strong>
-        <div><a class="btn" href="{{ link }}">📄 Baixar laudo</a></div>
+        <div>
+            <a href="{{ link }}" target="_blank" class="btn">👁️ Visualizar laudo</a>
+            <a class="btn" href="{{ link }}">📄 Baixar laudo</a>
+        </div>
         <small>Guarde este link em local seguro. Compartilhe apenas com profissionais autorizados.</small>
       </div>
     {% endif %}
@@ -356,10 +359,24 @@ def _processar_laudo(codigo, data_nasc):
 def download(file_id):
     try:
         service = get_drive_service()
+        
+        # Obtém metadados do arquivo
+        file_metadata = service.files().get(
+            fileId=file_id, 
+            fields="name"
+        ).execute()
+        original_filename = file_metadata.get('name', f'{file_id}.pdf')
+        
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp_path = tmp.name
+        
         download_pdf_drive(service, file_id, tmp_path)
-        return send_file(tmp_path, as_attachment=True, download_name=f"{file_id}.pdf")
+        
+        return send_file(
+            tmp_path, 
+            as_attachment=True, 
+            download_name=original_filename
+        )
     except Exception as e:
         return f"Erro ao baixar laudo: {e}", 500
 

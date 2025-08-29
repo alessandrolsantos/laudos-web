@@ -355,7 +355,7 @@ def _processar_laudo(codigo, data_nasc):
                 return {"ok": False, "msg": "Não foi possível validar a data de nascimento no PDF."}
             if normalizar_data(data_nasc) != data_pdf:
                 return {"ok": False, "msg": "Data de nascimento inválida."}
-            url = ensure_shared_download_link_drive(entry['id'])
+            url = ensure_shared_download_link_drive(service, entry['id'])
             if not url:
                 return {"ok": False, "msg": "Não foi possível gerar o link do laudo."}
             return {"ok": True, "link": url}

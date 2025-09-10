@@ -1,10 +1,7 @@
 from flask import send_file
 import os, re, tempfile
-from flask import Flask, request, jsonify, render_template_string
-import dropbox
-from dropbox.exceptions import ApiError
-import PyPDF2
-
+from flask import Flask, request, render_template_string
+from datetime import datetime, timedelta
 # Google Drive API imports
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -13,7 +10,6 @@ from googleapiclient.http import MediaIoBaseDownload
 from google.auth.transport.requests import Request
 import io
 
-# STORAGE_PROVIDER = os.environ.get("STORAGE_PROVIDER", "dropbox")
 STORAGE_PROVIDER = os.environ.get("STORAGE_PROVIDER", "google_drive")
 
 app = Flask(__name__)
@@ -80,7 +76,7 @@ HTML = """
   <div id="aguarde-overlay">
     <div>
       <div class="spinner"></div>
-      <div id="aguarde-msg">Aguarde, preparando download...</div>
+      <div id="aguarde-msg">Preparando download...</div>
     </div>
   </div>
   <div class="card">
@@ -88,12 +84,12 @@ HTML = """
       <img src="{{ url_for('static', filename='logo_epicentro.png') }}" alt="Epicentro - Centro de Diagnóstico e Tratamento de Epilepsia">
     </div>
     <h1>Consulta de Laudo</h1>
-    <p class="muted">Informe o <b>código do exame</b> e a sua <b>data de nascimento</b> para visualizar o resultado.</p>
+    <p class="muted">Informe o <b>primeiro nome do paciente</b> e o <b>código do exame</b> para visualizar o laudo.</p>
     <form method="post" novalidate id="laudo-form" autocomplete="off">
+      <label for="primeiro_nome">Primeiro nome do paciente</label>
+      <input id="primeiro_nome" name="primeiro_nome" type="text" required autofocus placeholder="Exemplo: Maria" aria-label="Primeiro nome">
       <label for="codigo">Código do exame</label>
-      <input id="codigo" name="codigo" type="number" required autofocus placeholder="Ex.: 123456" inputmode="numeric" aria-label="Código do exame">
-      <label for="data_nasc">Data de nascimento</label>
-      <input id="data_nasc" name="data_nasc" type="text" required placeholder="DD/MM/AAAA" maxlength="10" inputmode="numeric" aria-label="Data de nascimento">
+      <input id="codigo" name="codigo" type="text" required placeholder="Ex.: 123456" inputmode="numeric" aria-label="Código do exame">
       <button type="submit">Consultar laudo</button>
       {% if erro %}
         <div class="error">{{ erro }}</div>
@@ -108,30 +104,17 @@ HTML = """
     {% endif %}
   </div>
   <script>
-    // Máscara data nascimento (DD/MM/AAAA)
-    const dataInput = document.getElementById('data_nasc');
-    dataInput.addEventListener('input', function(e) {
-      let v = dataInput.value.replace(/\D/g, '').slice(0,8);
-      if (v.length >= 5)
-        dataInput.value = v.replace(/(\d{2})(\d{2})(\d{1,4})/, '$1/$2/$3');
-      else if (v.length >= 3)
-        dataInput.value = v.replace(/(\d{2})(\d{1,2})/, '$1/$2');
-      else
-        dataInput.value = v;
-    });
-
-    // Validação simples
     document.getElementById('laudo-form').addEventListener('submit', function(e) {
       const codigo = document.getElementById('codigo').value.trim();
-      const data = document.getElementById('data_nasc').value.trim();
+      const primeiro_nome = document.getElementById('primeiro_nome').value.trim();
       if (!codigo || codigo.length < 3) {
         e.preventDefault();
         alert("Por favor, insira um código de exame válido.");
         return;
       }
-      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(data)) {
+      if (!primeiro_nome || primeiro_nome.length < 2) {
         e.preventDefault();
-        alert("Por favor, insira a data de nascimento no formato DD/MM/AAAA.");
+        alert("Por favor, insira o primeiro nome do paciente.");
         return;
       }
       document.getElementById('aguarde-overlay').style.display = 'flex';
@@ -140,20 +123,22 @@ HTML = """
 </body>
 </html>
 
-
 """
+
+PORTUGUESE_MONTHS = {
+    "janeiro": "01", "fevereiro": "02", "março": "03", "abril": "04",
+    "maio": "05", "junho": "06", "julho": "07", "agosto": "08",
+    "setembro": "09", "outubro": "10", "novembro": "11", "dezembro": "12"
+}
+
 def get_token_path():
     token_env = os.environ.get("GOOGLE_TOKEN_JSON")
     if token_env:
-        # Caso esteja no Render (variável de ambiente configurada)
         path = "/tmp/token.json"
         with open(path, "w") as f:
             f.write(token_env)
         return path
-    # Caso contrário, usa o arquivo local (para desenvolvimento)
     return "token.json"
-    
-
 
 def get_credentials_path():
     cred_env = os.environ.get("GOOGLE_CREDS_JSON")
@@ -164,41 +149,15 @@ def get_credentials_path():
         return cred_path
     return "credentials.json"
 
-
-def get_dbx():
-    return dropbox.Dropbox(
-        oauth2_refresh_token=os.environ["DROPBOX_REFRESH_TOKEN"],
-        app_key=os.environ["DROPBOX_APP_KEY"],
-        app_secret=os.environ["DROPBOX_APP_SECRET"]
-    )
-
-def get_token_path():
-    token_env = os.environ.get("GOOGLE_TOKEN_JSON")
-    if token_env:
-        # Caso esteja no Render (variável de ambiente configurada)
-        path = "/tmp/token.json"
-        with open(path, "w") as f:
-            f.write(token_env)
-        return path
-    # Caso contrário, usa o arquivo local (para desenvolvimento)
-    return "token.json"
-
-
 def get_drive_service():
     SCOPES = ['https://www.googleapis.com/auth/drive']
     creds = None
     cred_path = get_credentials_path()
     token_path = get_token_path()
-
-    # Lê token já existente
     if os.path.exists(token_path):
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-
-    # Se não existir ou estiver inválido, tenta renovar
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
-
-    # Se ainda não tem credenciais válidas → só no ambiente de DEV
     if not creds or not creds.valid:
         if os.environ.get("FLASK_ENV") == "production" or os.environ.get("RENDER"):
             raise Exception("Token inválido ou ausente em produção. Gere token.json localmente e configure em GOOGLE_TOKEN_JSON.")
@@ -207,87 +166,69 @@ def get_drive_service():
             creds = flow.run_local_server(port=0)
             with open(token_path, 'w') as token:
                 token.write(creds.to_json())
-
     return build('drive', 'v3', credentials=creds)
 
-
-
-def normalizar_data(data:str)->str:
-    data = (data or "").strip().replace("-", "/")
-    if re.match(r"\d{2}/\d{2}/\d{2}$", data):
-        d,m,y = data.split("/")
-        full_year = f"20{y}" if int(y) <= 25 else f"19{y}"
-        return f"{d}/{m}/{full_year}"
-    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{2,4})$", data)
+def parse_date_from_nome(filename):
+    m = re.search(r'(\d{2}[a-zç]+?\d{4})', filename, re.IGNORECASE)
     if m:
-        d,mo,y = m.groups()
-        if len(y)==2:
-            y = f"20{y}" if int(y) <= 25 else f"19{y}"
-        return f"{int(d):02}/{int(mo):02}/{y}"
-    return data
-
-def extrair_data_nascimento_pdf(tmp_path:str)->str|None:
-    texto = ""
-    with open(tmp_path, "rb") as f:
-        reader = PyPDF2.PdfReader(f)
-        texto = re.sub(r"\s+", " ", texto)  # substitui múltiplos espaços por um só
-        for page in reader.pages:
-            texto += (page.extract_text() or "")
-    for pat in [
-        r"Data\s*Nasc(?:imento)?[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})",
-        r"Nascimento[:\s]*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})"
-    ]:
-        m = re.search(pat, texto, flags=re.IGNORECASE)
-        if m:
-            return normalizar_data(m.group(1))
+        date_str = m.group(1)
+        match = re.match(r"(\d{2})([a-zç]+)(\d{4})", date_str, re.IGNORECASE)
+        if match:
+            day, month_ptbr, year = match.groups()
+            month = PORTUGUESE_MONTHS.get(month_ptbr.lower())
+            if month:
+                return datetime.strptime(f"{day}{month}{year}", "%d%m%Y")
     return None
 
-# Dropbox
-def find_pdf_by_code(dbx, codigo:str, root_folder:str=""):
-    codigo = str(codigo).strip()
-    res = dbx.files_list_folder(root_folder or "", recursive=True)
-    from dropbox.files import FileMetadata
-    while True:
-        for entry in res.entries:
-            if isinstance(entry, FileMetadata) and entry.name.lower().endswith(".pdf"):
-                m = re.search(r"\((\w+)\)", entry.name)
-                if m and m.group(1) == codigo:
-                    return entry
-        if res.has_more:
-            res = dbx.files_list_folder_continue(res.cursor)
-        else:
-            break
-    return None
-
-def ensure_shared_download_link(dbx, path:str)->str|None:
-    try:
-        meta = dbx.sharing_create_shared_link_with_settings(path)
-        url = meta.url
-    except ApiError as e:
-        if hasattr(e, "error") and e.error.is_shared_link_already_exists():
-            links = dbx.sharing_list_shared_links(path=path)
-            url = links.links[0].url if links.links else None
-        else:
-            raise
-    if not url:
-        return None
-    if "dl=0" in url:
-        url = url.replace("dl=0", "dl=1")
-    elif "?dl=1" not in url:
-        url += "?dl=1"
-    return url
-
-# Google Drive
-def find_pdf_drive(service, codigo:str, folder_id:str):
+def find_zip_drive(service, primeiro_nome: str, codigo: str, folder_id: str):
+    # Busca arquivos .zip cujo nome contenha o código informado
     query = (
-        f"name contains '{codigo}' and mimeType='application/pdf' "
-        f"and '{folder_id}' in parents"
+      f"name contains '{codigo}' and '{folder_id}' in parents"
     )
-    results = service.files().list(q=query, pageSize=10, fields="files(id, name)").execute()
+    results = service.files().list(q=query, pageSize=1000, fields="files(id, name)").execute()
     items = results.get('files', [])
-    return items[0] if items else None
 
-def download_pdf_drive(service, file_id, tmp_path):
+    print(f"Arquivos retornados pela query:")
+    for item in items:
+        print(f" - {item['name']}")
+
+    primeiro_nome_cf = primeiro_nome.strip().casefold()
+    padrao_codigo = r'\(' + re.escape(codigo) + r'\)'
+
+    for item in items:
+        nome_file = item['name']
+        print(f'Checando arquivo: {nome_file}')  # Para debug
+        if not nome_file.lower().endswith('.zip'):
+            continue
+        if primeiro_nome_cf in nome_file.casefold() and re.search(padrao_codigo, nome_file):
+            file_date = parse_date_from_nome(nome_file)
+            if file_date:
+                if datetime.now() - file_date <= timedelta(days=60):
+                    return item
+                else:
+                    return "antigo"
+    return None
+
+def _processar_laudo(primeiro_nome, codigo):
+    try:
+        if not codigo or not primeiro_nome:
+            return {"ok": False, "msg": "Informe primeiro nome e código do exame."}
+        if STORAGE_PROVIDER == "google_drive":
+            service = get_drive_service()
+           # folder_id = "1RS_EBFRdMQirZbR0sVe79sIt7uU5igHE" # local
+            folder_id = os.environ.get("GOOGLE_FOLDER_ID", "")
+            resultado = find_zip_drive(service, primeiro_nome, codigo, folder_id)
+            if resultado == "antigo":
+                return {"ok": False, "msg": "Arquivo emitido a mais de 60 dias. Por favor, entre em contato com o Epicentro Curitiba pelos telefones (41)3262.1634 ou (41)9947.9532."}
+            if not resultado:
+                return {"ok": False, "msg": "Arquivo não encontrado para este nome/código."}
+            return {"ok": True, "file_id": resultado['id'], "filename": resultado['name']}
+        else:
+            return {"ok": False, "msg": "Storage provider não configurado corretamente."}
+    except Exception as e:
+        return {"ok": False, "msg": f"Erro técnico: {str(e)}"}
+
+def download_zip_drive(service, file_id, tmp_path):
     request = service.files().get_media(fileId=file_id)
     fh = io.FileIO(tmp_path, 'wb')
     downloader = MediaIoBaseDownload(fh, request)
@@ -296,112 +237,32 @@ def download_pdf_drive(service, file_id, tmp_path):
         status, done = downloader.next_chunk()
     fh.close()
 
-def ensure_shared_download_link_drive(service, file_id):
-    # Garante que o arquivo possa ser acessado por qualquer pessoa com o link
-    permission = {
-        'type': 'anyone',
-        'role': 'reader'
-    }
-    try:
-        service.permissions().create(
-            fileId=file_id,
-            body=permission,
-            fields='id'
-        ).execute()
-    except Exception as e:
-        print("Permissão já existe ou erro:", e)
-
-    return f"https://drive.google.com/uc?id={file_id}&export=download"
-
-
-def _processar_laudo(codigo, data_nasc):
-    try:
-        if not codigo or not data_nasc:
-            return {"ok": False, "msg": "Informe código e data de nascimento."}
-
-        if STORAGE_PROVIDER == "google_drive":
-            service = get_drive_service()
-            folder_id = os.environ.get("GOOGLE_FOLDER_ID", "")
-            entry = find_pdf_drive(service, codigo, folder_id)
-            if not entry:
-                return {"ok": False, "msg": "Laudo não encontrado."}
-
-            # Baixa PDF temporário
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-                tmp_path = tmp.name
-            download_pdf_drive(service, entry['id'], tmp_path)
-
-            # Valida data
-            data_pdf = extrair_data_nascimento_pdf(tmp_path)
-            try:
-                os.remove(tmp_path)
-            except:
-                pass
-
-            if not data_pdf:
-                return {"ok": False, "msg": "Não foi possível validar a data de nascimento no PDF."}
-            if normalizar_data(data_nasc) != data_pdf:
-                return {"ok": False, "msg": "Data de nascimento inválida."}
-
-            # Retorna apenas o file_id, para depois servir via nova rota
-            return {"ok": True, "file_id": entry['id'], "filename": entry['name']}
-
-        else:
-            return {"ok": False, "msg": "Storage provider não configurado corretamente."}
-
-    except Exception as e:
-        return {"ok": False, "msg": f"Erro técnico: {str(e)}"}
-
 @app.route("/download/<file_id>")
 def download(file_id):
     try:
         service = get_drive_service()
-        
-        # Obtém metadados do arquivo
-        file_metadata = service.files().get(
-            fileId=file_id, 
-            fields="name"
-        ).execute()
-        original_filename = file_metadata.get('name', f'{file_id}.pdf')
-        
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        file_metadata = service.files().get(fileId=file_id, fields="name").execute()
+        original_filename = file_metadata.get('name', f'{file_id}.zip')
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
             tmp_path = tmp.name
-        
-        download_pdf_drive(service, file_id, tmp_path)
-        
-        return send_file(
-            tmp_path, 
-            as_attachment=True, 
-            download_name=original_filename
-        )
+        download_zip_drive(service, file_id, tmp_path)
+        return send_file(tmp_path, as_attachment=True, download_name=original_filename)
     except Exception as e:
         return f"Erro ao baixar laudo: {e}", 500
 
-
 @app.route("/", methods=["GET", "POST"])
 def home():
-    link = erro = None
+    erro, link = None, None
     if request.method == "POST":
-        codigo = request.form.get("codigo")
-        data_nasc = request.form.get("data_nasc")
-        resp = _processar_laudo(codigo, data_nasc)
+        primeiro_nome = request.form.get("primeiro_nome", "").strip()
+        codigo = request.form.get("codigo", "").strip()
+        resp = _processar_laudo(primeiro_nome, codigo)
         if resp.get("ok"):
             link = f"/download/{resp.get('file_id')}"
         else:
             link = None
-
         erro = None if resp.get("ok") else resp.get("msg")
-    return render_template_string(HTML, link=link, erro=erro)
-
-@app.route("/laudo", methods=["POST"])
-def laudo():
-    data = request.get_json(force=True, silent=True) or {}
-    resp = _processar_laudo(data.get("codigo_exame"), data.get("data_nascimento"))
-    status = 200 if resp["ok"] else (
-        404 if "não encontrado" in resp["msg"].lower() else
-        401 if "inválida" in resp["msg"].lower() else 500
-    )
-    return jsonify(resp), status
+    return render_template_string(HTML, erro=erro, link=link)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

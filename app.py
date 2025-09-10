@@ -8,6 +8,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.auth.transport.requests import Request
+from flask import redirect
 import io
 
 STORAGE_PROVIDER = os.environ.get("STORAGE_PROVIDER", "google_drive")
@@ -19,7 +20,7 @@ HTML = """
 <html lang="pt-br">
 <head>
   <meta charset="utf-8">
-  <title>Consulta de Laudo</title>
+  <title>Epicentro Curitiba - Consulta de Laudo</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     :root { font-family: system-ui, Arial, sans-serif; }
@@ -131,6 +132,10 @@ PORTUGUESE_MONTHS = {
     "setembro": "09", "outubro": "10", "novembro": "11", "dezembro": "12"
 }
 
+@app.route("/")
+def home():
+    return redirect("/laudos")
+
 def get_token_path():
     token_env = os.environ.get("GOOGLE_TOKEN_JSON")
     if token_env:
@@ -215,8 +220,8 @@ def _processar_laudo(primeiro_nome, codigo):
             return {"ok": False, "msg": "Informe primeiro nome e código do exame."}
         if STORAGE_PROVIDER == "google_drive":
             service = get_drive_service()
-           # folder_id = "1RS_EBFRdMQirZbR0sVe79sIt7uU5igHE" # local
-            folder_id = os.environ.get("GOOGLE_FOLDER_ID", "")
+            folder_id = "1RS_EBFRdMQirZbR0sVe79sIt7uU5igHE" # local
+          #  folder_id = os.environ.get("GOOGLE_FOLDER_ID", "")
             resultado = find_zip_drive(service, primeiro_nome, codigo, folder_id)
             if resultado == "antigo":
                 return {"ok": False, "msg": "Arquivo emitido a mais de 60 dias. Por favor, entre em contato com o Epicentro Curitiba pelos telefones (41)3262.1634 ou (41)9947.9532."}
@@ -250,8 +255,8 @@ def download(file_id):
     except Exception as e:
         return f"Erro ao baixar laudo: {e}", 500
 
-@app.route("/", methods=["GET", "POST"])
-def home():
+@app.route("/laudos", methods=["GET", "POST"])
+def laudos():
     erro, link = None, None
     if request.method == "POST":
         primeiro_nome = request.form.get("primeiro_nome", "").strip()

@@ -236,8 +236,7 @@ def _processar_laudo(primeiro_nome, codigo):
             return {"ok": False, "msg": "Informe primeiro nome e código do exame."}
         if STORAGE_PROVIDER == "google_drive":
             service = get_drive_service()
-            folder_id = "1RS_EBFRdMQirZbR0sVe79sIt7uU5igHE" # local
-          #  folder_id = os.environ.get("GOOGLE_FOLDER_ID", "")
+            folder_id = os.environ.get("GOOGLE_FOLDER_ID", "1RS_EBFRdMQirZbR0sVe79sIt7uU5igHE")
             resultado = find_zip_drive(service, primeiro_nome, codigo, folder_id)
             if resultado == "antigo":
                 return {"ok": False, "msg": "Arquivo emitido a mais de 60 dias. Por favor, entre em contato com o Epicentro Curitiba pelos telefones (41)3262.1634 ou (41)9947.9532."}

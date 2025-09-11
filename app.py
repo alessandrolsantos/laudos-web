@@ -10,6 +10,7 @@ from googleapiclient.http import MediaIoBaseDownload
 from google.auth.transport.requests import Request
 from flask import redirect
 import io
+import unicodedata
 
 STORAGE_PROVIDER = os.environ.get("STORAGE_PROVIDER", "google_drive")
 
@@ -127,10 +128,19 @@ HTML = """
 """
 
 PORTUGUESE_MONTHS = {
-    "janeiro": "01", "fevereiro": "02", "março": "03", "abril": "04",
-    "maio": "05", "junho": "06", "julho": "07", "agosto": "08",
-    "setembro": "09", "outubro": "10", "novembro": "11", "dezembro": "12"
+    "jan": "01", "fev": "02", "mar": "03", "abr": "04",
+    "mai": "05", "jun": "06", "jul": "07", "ago": "08",
+    "set": "09", "out": "10", "nov": "11", "dez": "12"
 }
+
+
+
+def remover_acentos(texto):
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', texto)
+        if unicodedata.category(c) != 'Mn'
+    )
+
 
 @app.route("/")
 def home():
@@ -174,14 +184,16 @@ def get_drive_service():
     return build('drive', 'v3', credentials=creds)
 
 def parse_date_from_nome(filename):
-    m = re.search(r'(\d{2}[a-zç]+?\d{4})', filename, re.IGNORECASE)
+    m = re.search(r'(\d{2}[a-zç]+?\d{2,4})', filename, re.IGNORECASE)
     if m:
         date_str = m.group(1)
-        match = re.match(r"(\d{2})([a-zç]+)(\d{4})", date_str, re.IGNORECASE)
+        match = re.match(r"(\d{2})([a-zç]+)(\d{2,4})", date_str, re.IGNORECASE)
         if match:
             day, month_ptbr, year = match.groups()
             month = PORTUGUESE_MONTHS.get(month_ptbr.lower())
             if month:
+                if len(year) == 2:
+                    year = "20" + year
                 return datetime.strptime(f"{day}{month}{year}", "%d%m%Y")
     return None
 
@@ -205,7 +217,11 @@ def find_zip_drive(service, primeiro_nome: str, codigo: str, folder_id: str):
         print(f'Checando arquivo: {nome_file}')  # Para debug
         if not nome_file.lower().endswith('.zip'):
             continue
-        if primeiro_nome_cf in nome_file.casefold() and re.search(padrao_codigo, nome_file):
+        primeiro_nome_cf = primeiro_nome.strip().casefold()
+        nome_file_cf = nome_file.casefold()
+        primeiro_nome_normalizado = remover_acentos(primeiro_nome_cf)
+        nome_file_normalizado = remover_acentos(nome_file_cf)
+        if re.search(rf"\b{re.escape(primeiro_nome_normalizado)}\b", nome_file_normalizado) and re.search(padrao_codigo, nome_file):
             file_date = parse_date_from_nome(nome_file)
             if file_date:
                 if datetime.now() - file_date <= timedelta(days=60):
